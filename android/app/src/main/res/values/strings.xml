@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Mozikako</string>
+    <string name="title_activity_main">Mozikako</string>
+    <string name="package_name">com.mozikako.app</string>
+    <string name="custom_url_scheme">com.mozikako.app</string>
+</resources>

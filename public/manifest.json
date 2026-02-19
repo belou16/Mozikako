@@ -1,0 +1,17 @@
+{
+  "name": "Mozikako",
+  "short_name": "Mozikako",
+  "description": "Search and play music from iTunes, YouTube & more. Preview songs instantly in one app.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
