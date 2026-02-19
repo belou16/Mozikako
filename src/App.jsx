@@ -28,12 +28,16 @@ import {
   Loader,
   Volume2,
   ExternalLink,
-  ChevronDown
+  ChevronDown,
+  Activity,
+  Trash
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { searchTracks, searchAlbums, getTopCharts, getMockYouTubeResults, getYouTubeEmbedUrl } from './services/musicApi';
+import { searchTracks, searchAlbums, getTopCharts, searchYouTube, searchDeezer, getYouTubeEmbedUrl } from './services/musicApi';
 import { useAudioPlayer } from './hooks/useAudioPlayer';
+import { spotifyAuth, deezerAuth, authUtils } from './services/authService';
 import './App.css';
+
 
 /* ============================================
    HELPERS
@@ -58,11 +62,18 @@ function App() {
   const [activeFilter, setActiveFilter] = useState('All Results');
   const [activeLibraryTab, setActiveLibraryTab] = useState('Playlists');
   const [isFullPlayer, setIsFullPlayer] = useState(false);
+  const [showSplash, setShowSplash] = useState(true);
+
+  // Auth States
+  const [spotifyToken, setSpotifyToken] = useState(null);
+  const [deezerToken, setDeezerToken] = useState(null);
+  const [userData, setUserData] = useState({ spotify: null, deezer: null });
 
   // Real API state
   const [searchResults, setSearchResults] = useState([]);
   const [albumResults, setAlbumResults] = useState([]);
   const [youtubeResults, setYoutubeResults] = useState([]);
+  const [deezerResults, setDeezerResults] = useState([]);
   const [topCharts, setTopCharts] = useState([]);
   const [topTracks, setTopTracks] = useState([]);
   const [isLoadingSearch, setIsLoadingSearch] = useState(false);
@@ -97,10 +108,89 @@ function App() {
 
   const filters = ['All Results', 'Songs', 'Albums'];
   const libraryTabs = ['Playlists', 'Liked', 'Artists', 'Albums'];
+  
+  const genres = [
+    { name: 'Pop', icon: '🎤', color: '#ff2d55' },
+    { name: 'Hip-Hop', icon: '🔥', color: '#ff9500' },
+    { name: 'Rock', icon: '🎸', color: '#af52de' },
+    { name: 'Dance', icon: '💃', color: '#5856d6' },
+    { name: 'Indie', icon: '✨', color: '#007aff' },
+    { name: 'Jazz', icon: '🎺', color: '#34c759' }
+  ];
 
   /* ============================================
-     LOAD TOP CHARTS ON MOUNT
+     TOAST SYSTEM
      ============================================ */
+  const [toast, setToast] = useState(null);
+  const showToast = (message, icon = <Check size={16} />) => {
+    setToast({ message, icon });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  /* ============================================
+     AUTH HANDLING
+     ============================================ */
+  useEffect(() => {
+    const params = authUtils.getParamsFromUrl();
+    window.location.hash = ""; // Clean URL
+
+    // Handle Spotify token
+    const s_token = params.access_token;
+    if (s_token && (window.location.hash.includes('access_token') || !params.expires)) {
+       // Note: Deezer also uses access_token, so we check origin if possible 
+       // but Spotify token is usually much longer than Deezer's temporary test ones
+    }
+
+    // A simpler way: Check if we are coming from a specific auth flow
+    if (params.access_token) {
+      // Logic to distinguish (Spotify tokens are long, Deezer ones vary)
+      // For now, let's treat based on length as a heuristic or local storage hint
+      const isSpotify = params.access_token.length > 50; 
+      
+      if (isSpotify) {
+        setSpotifyToken(params.access_token);
+        localStorage.setItem('spotify_token', params.access_token);
+        fetchProfile('spotify', params.access_token);
+      } else {
+        setDeezerToken(params.access_token);
+        localStorage.setItem('deezer_token', params.access_token);
+        fetchProfile('deezer', params.access_token);
+      }
+    } else {
+      const s = localStorage.getItem('spotify_token');
+      const d = localStorage.getItem('deezer_token');
+      if (s) { setSpotifyToken(s); fetchProfile('spotify', s); }
+      if (d) { setDeezerToken(d); fetchProfile('deezer', d); }
+    }
+
+    // Hide splash after 2.5s
+    const timer = setTimeout(() => setShowSplash(false), 2500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const fetchProfile = async (source, token) => {
+    try {
+      if (source === 'spotify') {
+        const res = await fetch('https://api.spotify.com/v1/me', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (data.id) setUserData(prev => ({ ...prev, spotify: data }));
+      } else if (source === 'deezer') {
+        const res = await fetch(`https://api.deezer.com/user/me?access_token=${token}`);
+        const data = await res.json();
+        if (data.id) setUserData(prev => ({ ...prev, deezer: data }));
+      }
+    } catch (e) {
+      console.warn(`${source} profile fetch failed`, e);
+    }
+  };
+
+  const handleLogin = (source) => {
+    if (source === 'spotify') window.location.href = spotifyAuth.loginUrl;
+    if (source === 'deezer') window.location.href = deezerAuth.loginUrl;
+    if (source === 'apple') alert('Apple Music requires a manual developer token in .env');
+  };
   useEffect(() => {
     let cancelled = false;
     async function loadCharts() {
@@ -143,14 +233,16 @@ function App() {
     searchTimeout.current = setTimeout(async () => {
       setIsLoadingSearch(true);
       try {
-        const [tracks, albums] = await Promise.all([
-          searchTracks(value, 6),
-          searchAlbums(value, 3),
+        const [tracks, albums, yt, dz] = await Promise.all([
+          searchTracks(value, 8),
+          searchAlbums(value, 5),
+          searchYouTube(value, 4),
+          searchDeezer(value, 6)
         ]);
-        const yt = getMockYouTubeResults(value);
         setSearchResults(tracks);
         setAlbumResults(albums);
         setYoutubeResults(yt);
+        setDeezerResults(dz);
       } catch (e) {
         console.warn('Search error:', e);
       } finally {
@@ -158,6 +250,16 @@ function App() {
       }
     }, 400);
   }, []);
+
+  const handleSearchKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      const bestTrack = searchResults.find(t => t.preview) || deezerResults.find(t => t.preview);
+      if (bestTrack) {
+        handlePlayTrack({ ...bestTrack, source: bestTrack.source || 'iTunes' });
+        showToast(`Playing Magic Match: ${bestTrack.title}`, <Sparkles size={16} />);
+      }
+    }
+  };
 
   const toggleSource = (id) => {
     setConnectedSources(prev => 
@@ -168,7 +270,11 @@ function App() {
   const toggleLike = (track) => {
     setLikedSongs(prev => {
       const exists = prev.find(t => t.id === track.id);
-      if (exists) return prev.filter(t => t.id !== track.id);
+      if (exists) {
+        showToast("Removed from Library", <Heart size={16} />);
+        return prev.filter(t => t.id !== track.id);
+      }
+      showToast("Added to Library", <Heart size={16} fill="#ff2d55" color="#ff2d55" />);
       return [...prev, track];
     });
   };
@@ -187,18 +293,28 @@ function App() {
     setIsGeneratingMix(true);
     const vibe = vibes.find(v => v.id === selectedVibe);
     try {
-      const tracks = await searchTracks(vibe.query, 10);
-      setSmartMixTracks(tracks);
+      // Aggregate from multiple sources for a "Truly Smart" mix
+      const [itunes, deezer] = await Promise.all([
+        connectedSources.includes('apple') ? searchTracks(vibe.query, 6) : Promise.resolve([]),
+        connectedSources.includes('deezer') ? searchDeezer(vibe.query, 6) : Promise.resolve([])
+      ]);
+      
+      const combined = [
+        ...itunes.map(t => ({ ...t, source: 'iTunes' })),
+        ...deezer.map(t => ({ ...t, source: 'Deezer' }))
+      ].sort(() => Math.random() - 0.5); // Shuffle
+
+      setSmartMixTracks(combined);
       setIsSmartMixOpen(false);
       setActiveTab('library');
       setActiveLibraryTab('Playlists');
-      // Auto-play first track with preview
-      const playable = tracks.find(t => t.preview);
-      if (playable) {
-        player.playTrack(playable, tracks.filter(t => t.preview));
-      }
+      showToast(`${selectedVibe} Mix: ${combined.length} Tracks`, <Sparkles size={16} />);
+      
+      const playable = combined.find(t => t.preview);
+      if (playable) player.playTrack(playable, combined.filter(t => t.preview));
     } catch (e) {
       console.warn('Smart Mix error:', e);
+      showToast("Mix Generation Failed", <X size={16} />);
     } finally {
       setIsGeneratingMix(false);
     }
@@ -207,10 +323,14 @@ function App() {
   /* ============================================
      HOME VIEW
      ============================================ */
+  /* ============================================
+     HOME VIEW
+     ============================================ */
   const renderHome = () => (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
       className="home-view"
     >
       <div className="home-greeting">
@@ -218,44 +338,97 @@ function App() {
         <h1>Listen Now</h1>
       </div>
 
-      {/* Top Charts */}
+      {/* Quick Picks for fast access */}
       <div className="home-section">
-        <div className="home-section-title">
-          {isLoadingCharts ? 'Loading Charts...' : 'Top Charts'}
-        </div>
-        {isLoadingCharts ? (
-          <div className="loading-indicator">
-            <Loader size={24} className="spin" />
-          </div>
-        ) : (
-          <div className="horizontal-scroll">
-            {topCharts.map((item, i) => (
-              <div 
-                key={item.id || i} 
-                className="scroll-card"
-                onClick={() => handleSearch(item.title || '')}
-              >
-                {item.image ? (
-                  <img className="scroll-card-img" src={item.image} alt={item.title} />
-                ) : (
-                  <div className="scroll-card-img placeholder-img">
-                    <Music size={32} />
-                  </div>
-                )}
-                <div className="scroll-card-title">{item.title}</div>
-                <div className="scroll-card-subtitle">{item.artist}</div>
+        <div className="home-section-title">Fresh Picks</div>
+        <div className="quick-picks">
+          {(topTracks.length > 0 ? topTracks : searchResults).slice(0, 6).map(track => (
+            <div key={track.id} className="quick-pick-card" onClick={() => handlePlayTrack(track)}>
+              <img src={track.image} alt={track.title} />
+              <div className="quick-pick-info">
+                <span className="qp-title">{track.title}</span>
+                <span className="qp-artist">{track.artist}</span>
               </div>
-            ))}
-          </div>
-        )}
+            </div>
+          ))}
+        </div>
       </div>
 
-      {/* Trending Tracks (playable) */}
-      {topTracks.length > 0 && (
-        <div className="home-section">
-          <div className="home-section-title">Trending Now</div>
-          <div className="track-list">
-            {topTracks.slice(0, 5).map(track => (
+      {/* Moods — Interactive discovery */}
+      <div className="home-section">
+        <div className="home-section-title">Your Moods</div>
+        <div className="mood-grid">
+          {vibes.map(v => (
+            <div key={v.id} className="mood-card" style={{ background: `linear-gradient(135deg, ${v.color}15, ${v.color}40)` }} onClick={() => {
+              setSelectedVibe(v.id);
+              setIsSmartMixOpen(true);
+            }}>
+              <v.icon size={24} color={v.color} />
+              <span>{v.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Recently Played / Trending */}
+      <div className="home-section">
+        <div className="home-section-title">Trending Now</div>
+        <div className="horizontal-scroll">
+          {(topTracks.length > 6 ? topTracks.slice(6, 14) : topCharts).map((item, i) => (
+            <div key={item.id || i} className="scroll-card" onClick={() => handlePlayTrack(item)}>
+              <div className="scroll-card-img-wrapper">
+                <img className="scroll-card-img" src={item.image} alt={item.title} />
+                <button className="card-play-btn"><Play size={16} fill="white" /></button>
+              </div>
+              <div className="scroll-card-title">{item.title}</div>
+              <div className="scroll-card-subtitle">{item.artist}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Browse Categories */}
+      <div className="home-section">
+        <div className="home-section-title">Browse Categories</div>
+        <div className="genre-grid">
+          {genres.map(g => (
+            <div key={g.name} className="genre-card" style={{ borderLeft: `4px solid ${g.color}` }} onClick={() => {
+              setActiveTab('search');
+              handleSearch(g.name);
+            }}>
+              <span className="genre-icon">{g.icon}</span>
+              <span>{g.name}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Top Playlists simulation */}
+      <div className="home-section">
+        <div className="home-section-title">Curated for You</div>
+        <div className="horizontal-scroll">
+          {[
+            { title: 'Global Top 50', icon: '🌍', color: '#1db954' },
+            { title: 'Chill Mix', icon: '🌌', color: '#5856d6' },
+            { title: 'Daily Drive', icon: '🚗', color: '#ff9500' },
+            { title: 'Release Radar', icon: '🛰️', color: '#ff2d55' }
+          ].map(pl => (
+            <div key={pl.title} className="scroll-card playlist" onClick={() => handleSearch(pl.title)}>
+              <div className="scroll-card-img playlist-gradient" style={{ background: `linear-gradient(45deg, ${pl.color}, #000)` }}>
+                <span style={{ fontSize: 32 }}>{pl.icon}</span>
+              </div>
+              <div className="scroll-card-title">{pl.title}</div>
+              <div className="scroll-card-subtitle">Playlist • Mozikako</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Trending Tracks list */}
+      <div className="home-section" style={{ paddingBottom: 40 }}>
+        <div className="home-section-title">World Charts</div>
+        <div className="track-list">
+          {topTracks.map(track => (
               <div 
                 key={track.id} 
                 className={`track-item ${player.currentTrack?.id === track.id ? 'now-active' : ''}`}
@@ -263,58 +436,26 @@ function App() {
               >
                 <div className="track-img-wrapper">
                   <img src={track.image} alt={track.title} />
-                  {player.currentTrack?.id === track.id && player.isPlaying && (
-                    <div className="playing-indicator">
-                      <div className="bar" /><div className="bar" /><div className="bar" />
-                    </div>
-                  )}
                 </div>
                 <div className="track-info">
                   <div className="track-title">{track.title}</div>
-                  <div className="track-subtitle">{track.artist} • {track.duration}</div>
+                  <div className="track-subtitle">{track.artist}</div>
                 </div>
                 <button className="like-btn" onClick={(e) => { e.stopPropagation(); toggleLike(track); }}>
                   <Heart size={18} fill={isLiked(track.id) ? '#ff2d55' : 'none'} color={isLiked(track.id) ? '#ff2d55' : 'var(--text-tertiary)'} />
                 </button>
-                {track.preview ? (
-                  <button className="play-btn" onClick={(e) => { e.stopPropagation(); handlePlayTrack(track, topTracks); }}>
-                    {player.currentTrack?.id === track.id && player.isPlaying 
-                      ? <Pause size={16} fill="white" /> 
-                      : <Play size={16} fill="white" />}
-                  </button>
-                ) : (
-                  <div className="no-preview-badge">No preview</div>
-                )}
+                <div className="play-indicator-small">
+                  {player.currentTrack?.id === track.id && player.isPlaying ? <Pause size={14} fill="white" /> : <Play size={14} fill="white" />}
+                </div>
               </div>
             ))}
-          </div>
         </div>
-      )}
-
-      {/* Quick Section for recent searches */}
-      {smartMixTracks.length > 0 && (
-        <div className="home-section">
-          <div className="home-section-title">Your Smart Mix</div>
-          <div className="horizontal-scroll">
-            {smartMixTracks.slice(0, 6).map((track, i) => (
-              <div 
-                key={track.id || i} 
-                className="scroll-card"
-                onClick={() => handlePlayTrack(track, smartMixTracks)}
-              >
-                <img className="scroll-card-img" src={track.image} alt={track.title} />
-                <div className="scroll-card-title">{track.title}</div>
-                <div className="scroll-card-subtitle">{track.artist}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      </div>
     </motion.div>
   );
 
   /* ============================================
-     SEARCH VIEW
+     VIEWS
      ============================================ */
   const renderSearch = () => (
     <motion.div 
@@ -330,6 +471,7 @@ function App() {
             type="text" 
             value={searchQuery}
             onChange={(e) => handleSearch(e.target.value)}
+            onKeyDown={handleSearchKeyPress}
             placeholder="Artists, songs, or albums"
           />
           {searchQuery && <X size={18} className="clear-icon" onClick={() => handleSearch('')} />}
@@ -387,6 +529,26 @@ function App() {
             <div className="loading-indicator">
               <Loader size={24} className="spin" />
               <span>Searching...</span>
+            </div>
+          )}
+
+          {searchResults.length > 0 && !isLoadingSearch && activeFilter === 'All Results' && (
+            <div className="top-result-container">
+              <div className="section-header">
+                <h3>Top Result</h3>
+              </div>
+              <div className="top-result-card glass" onClick={() => handlePlayTrack(searchResults[0])}>
+                <div className="top-result-content">
+                  <img src={searchResults[0].image} alt="" className="top-result-img" />
+                  <div className="top-result-info">
+                    <span className="top-result-title">{searchResults[0].title}</span>
+                    <span className="top-result-artist">{searchResults[0].artist} • Song</span>
+                    <button className="top-result-play-btn">
+                       {player.currentTrack?.id === searchResults[0].id && player.isPlaying ? <Pause size={24} fill="black" stroke="none" /> : <Play size={24} fill="black" stroke="none" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
@@ -462,6 +624,42 @@ function App() {
             </section>
           )}
 
+          {/* Deezer Section */}
+          {(activeFilter === 'All Results' || activeFilter === 'Songs') && deezerResults.length > 0 && (
+            <section className="results-section">
+              <div className="section-header">
+                <div className="service-badge" style={{ color: '#ff0000' }}>
+                  <div className="service-icon">🎶</div>
+                  <span>DEEZER</span>
+                </div>
+              </div>
+              <div className="track-list">
+                {deezerResults.map(track => (
+                  <div 
+                    key={track.id} 
+                    className={`track-item ${player.currentTrack?.id === track.id ? 'now-active' : ''}`}
+                    onClick={() => handlePlayTrack(track)}
+                  >
+                    <div className="track-img-wrapper">
+                      <img src={track.image} alt={track.title} />
+                    </div>
+                    <div className="track-info">
+                      <div className="track-title">{track.title}</div>
+                      <div className="track-subtitle">{track.artist} • Deezer</div>
+                    </div>
+                    {track.preview && (
+                      <button className="play-btn" onClick={(e) => { e.stopPropagation(); handlePlayTrack(track); }}>
+                        {player.currentTrack?.id === track.id && player.isPlaying 
+                          ? <Pause size={16} fill="white" /> 
+                          : <Play size={16} fill="white" />}
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
           {/* YouTube Section */}
           {(activeFilter === 'All Results') && youtubeResults.length > 0 && (
             <section className="results-section">
@@ -522,7 +720,10 @@ function App() {
     >
       <div className="library-header">
         <h1>Your Library</h1>
-        <button className="icon-button"><Plus size={24} /></button>
+        <div className="header-actions">
+          <button className="icon-button"><Plus size={24} /></button>
+          <button className="icon-button"><SearchIcon size={22} /></button>
+        </div>
       </div>
 
       <div className="library-tabs">
@@ -537,8 +738,63 @@ function App() {
         ))}
       </div>
 
+      {activeLibraryTab === 'Playlists' && (
+        <div className="library-content">
+          <div className="section-title-row">
+            <h3>Featured Playlists</h3>
+          </div>
+          <div className="playlist-grid">
+            <div className="playlist-card library" onClick={() => setActiveLibraryTab('Liked')}>
+              <div className="pl-artwork-gradient liked">
+                <Heart fill="white" size={32} />
+              </div>
+              <div className="pl-info">
+                <div className="pl-title">Liked Songs</div>
+                <div className="pl-count">{likedSongs.length} songs</div>
+              </div>
+            </div>
+            
+            {smartMixTracks.length > 0 && (
+              <div className="playlist-card library" onClick={() => handlePlayTrack(smartMixTracks[0], smartMixTracks)}>
+                <div className="pl-artwork-gradient smart">
+                  <Sparkles fill="white" size={32} />
+                </div>
+                <div className="pl-info">
+                  <div className="pl-title">Recent Smart Mix</div>
+                  <div className="pl-count">{smartMixTracks.length} tracks</div>
+                </div>
+              </div>
+            )}
+
+            <div className="playlist-card library">
+              <div className="pl-artwork-gradient chill">
+                <Music fill="white" size={32} />
+              </div>
+              <div className="pl-info">
+                <div className="pl-title">Chill Vibes</div>
+                <div className="pl-count">Custom Selection</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="section-title-row" style={{ marginTop: 32 }}>
+            <h3>Made for You</h3>
+          </div>
+          <div className="horizontal-scroll gap-small">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="scroll-card mini">
+                <div className="scroll-card-img placeholder-gradient" style={{ filter: `hue-rotate(${i * 60}deg)` }}>
+                  <Sparkles size={32} />
+                </div>
+                <div className="scroll-card-title">Daily Mix {i}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {activeLibraryTab === 'Liked' && (
-        <>
+        <div className="library-content">
           {likedSongs.length === 0 ? (
             <div className="empty-state">
               <Heart size={48} color="var(--text-tertiary)" />
@@ -547,6 +803,11 @@ function App() {
             </div>
           ) : (
             <div className="track-list">
+              <div className="list-controls">
+                <button className="btn-play-all" onClick={() => handlePlayTrack(likedSongs[0], likedSongs)}>
+                  <Play size={16} fill="black" /> Play All
+                </button>
+              </div>
               {likedSongs.map(track => (
                 <div 
                   key={track.id} 
@@ -558,111 +819,23 @@ function App() {
                   </div>
                   <div className="track-info">
                     <div className="track-title">{track.title}</div>
-                    <div className="track-subtitle">{track.artist} • {track.duration}</div>
+                    <div className="track-subtitle">{track.artist}</div>
                   </div>
                   <button className="like-btn" onClick={(e) => { e.stopPropagation(); toggleLike(track); }}>
                     <Heart size={18} fill="#ff2d55" color="#ff2d55" />
                   </button>
-                  {track.preview && (
-                    <button className="play-btn" onClick={(e) => { e.stopPropagation(); handlePlayTrack(track, likedSongs); }}>
-                      {player.currentTrack?.id === track.id && player.isPlaying 
-                        ? <Pause size={16} fill="white" /> 
-                        : <Play size={16} fill="white" />}
-                    </button>
-                  )}
                 </div>
               ))}
             </div>
           )}
-        </>
-      )}
-
-      {activeLibraryTab === 'Playlists' && (
-        <>
-          {smartMixTracks.length > 0 && (
-            <div className="smart-mix-playlist">
-              <div className="playlist-item">
-                <div className="playlist-cover-gradient">
-                  <Sparkles size={24} />
-                </div>
-                <div className="playlist-item-info">
-                  <div className="playlist-item-title">Smart Mix — {selectedVibe}</div>
-                  <div className="playlist-item-meta">
-                    <span>AI Generated • {smartMixTracks.length} songs</span>
-                  </div>
-                </div>
-                <ChevronRight size={18} color="var(--text-tertiary)" />
-              </div>
-              <div className="track-list">
-                {smartMixTracks.map(track => (
-                  <div 
-                    key={track.id}
-                    className={`track-item ${player.currentTrack?.id === track.id ? 'now-active' : ''}`}
-                    onClick={() => handlePlayTrack(track, smartMixTracks)}
-                  >
-                    <div className="track-img-wrapper">
-                      <img src={track.image} alt={track.title} />
-                      {player.currentTrack?.id === track.id && player.isPlaying && (
-                        <div className="playing-indicator">
-                          <div className="bar" /><div className="bar" /><div className="bar" />
-                        </div>
-                      )}
-                    </div>
-                    <div className="track-info">
-                      <div className="track-title">{track.title}</div>
-                      <div className="track-subtitle">{track.artist} • {track.duration}</div>
-                    </div>
-                    {track.preview && (
-                      <button className="play-btn" onClick={(e) => { e.stopPropagation(); handlePlayTrack(track, smartMixTracks); }}>
-                        {player.currentTrack?.id === track.id && player.isPlaying 
-                          ? <Pause size={16} fill="white" /> 
-                          : <Play size={16} fill="white" />}
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {likedSongs.length > 0 && (
-            <div className="playlist-item" onClick={() => setActiveLibraryTab('Liked')}>
-              <div className="playlist-cover-gradient liked">
-                <Heart size={24} />
-              </div>
-              <div className="playlist-item-info">
-                <div className="playlist-item-title">Liked Songs</div>
-                <div className="playlist-item-meta">
-                  <span>Playlist • {likedSongs.length} songs</span>
-                </div>
-              </div>
-              <ChevronRight size={18} color="var(--text-tertiary)" />
-            </div>
-          )}
-
-          {smartMixTracks.length === 0 && likedSongs.length === 0 && (
-            <div className="empty-state">
-              <Library size={48} color="var(--text-tertiary)" />
-              <p>Your library is empty</p>
-              <span>Use Smart Mix or like songs to build your collection</span>
-            </div>
-          )}
-        </>
-      )}
-
-      {activeLibraryTab === 'Artists' && (
-        <div className="empty-state">
-          <Music size={48} color="var(--text-tertiary)" />
-          <p>No followed artists</p>
-          <span>Search and discover new artists</span>
         </div>
       )}
 
-      {activeLibraryTab === 'Albums' && (
-        <div className="empty-state">
-          <Music size={48} color="var(--text-tertiary)" />
-          <p>No saved albums</p>
-          <span>Browse and save albums while searching</span>
+      {(activeLibraryTab === 'Artists' || activeLibraryTab === 'Albums') && (
+        <div className="empty-state full-height">
+          <Library size={48} color="var(--text-tertiary)" />
+          <p>This section is empty</p>
+          <span>Continue searching for music to populate your {activeLibraryTab}</span>
         </div>
       )}
     </motion.div>
@@ -685,33 +858,31 @@ function App() {
         <div className="settings-group-title">Connected Services</div>
         <div className="settings-card">
           {sources.map(s => (
-            <div key={s.id} className="settings-item" onClick={() => toggleSource(s.id)}>
+            <div key={s.id} className="settings-item" onClick={() => handleLogin(s.id)}>
               <div className="settings-item-left">
                 <div className="settings-item-icon" style={{ background: s.color + '22' }}>{s.icon}</div>
-                <span className="settings-item-label">{s.name}</span>
+                <div className="settings-item-col">
+                  <span className="settings-item-label">{s.name}</span>
+                  {userData[s.id] && (
+                    <span className="source-connected-name">Connected as {userData[s.id].display_name || userData[s.id].name}</span>
+                  )}
+                </div>
               </div>
-              <div className={`toggle-switch ${connectedSources.includes(s.id) ? 'on' : ''}`} />
+              <div className={`toggle-switch ${(spotifyToken && s.id === 'spotify') || (deezerToken && s.id === 'deezer') ? 'on' : ''}`} />
             </div>
           ))}
-          <div className="settings-item">
-            <div className="settings-item-left">
-              <div className="settings-item-icon" style={{ background: '#fc3c4422' }}>🎶</div>
-              <span className="settings-item-label">Deezer</span>
-            </div>
-            <div className="toggle-switch" />
-          </div>
         </div>
       </div>
 
       <div className="settings-group">
-        <div className="settings-group-title">Playback</div>
+        <div className="settings-group-title">Music Experience</div>
         <div className="settings-card">
           <div className="settings-item">
             <div className="settings-item-left">
               <div className="settings-item-icon" style={{ background: '#5856d622' }}>
                 <Volume2 size={16} />
               </div>
-              <span className="settings-item-label">Volume</span>
+              <span className="settings-item-label">Master Volume</span>
             </div>
             <div className="volume-slider-wrapper">
               <input 
@@ -731,77 +902,75 @@ function App() {
               <span className="settings-item-label">Audio Quality</span>
             </div>
             <div className="settings-item-value">
-              <span>High</span>
-              <ChevronRight size={16} />
-            </div>
-          </div>
-          <div className="settings-item">
-            <div className="settings-item-left">
-              <div className="settings-item-icon" style={{ background: '#ff950022' }}>
-                <Download size={16} />
-              </div>
-              <span className="settings-item-label">Download Quality</span>
-            </div>
-            <div className="settings-item-value">
-              <span>Lossless</span>
+              <span>Automatic</span>
               <ChevronRight size={16} />
             </div>
           </div>
           <div className="settings-item">
             <div className="settings-item-left">
               <div className="settings-item-icon" style={{ background: '#34c75922' }}>
-                <LinkIcon size={16} />
+                <Activity size={16} />
               </div>
-              <span className="settings-item-label">Crossfade</span>
+              <span className="settings-item-label">Equalizer</span>
             </div>
-            <div className="toggle-switch on" />
+            <ChevronRight size={16} />
           </div>
         </div>
       </div>
 
       <div className="settings-group">
-        <div className="settings-group-title">General</div>
+        <div className="settings-group-title">Data & Storage</div>
         <div className="settings-card">
           <div className="settings-item">
             <div className="settings-item-left">
-              <div className="settings-item-icon" style={{ background: '#ff2d5522' }}>
-                <Bell size={16} />
+              <div className="settings-item-icon" style={{ background: '#ff950022' }}>
+                <Download size={16} />
               </div>
-              <span className="settings-item-label">Notifications</span>
+              <span className="settings-item-label">Downloads</span>
             </div>
-            <ChevronRight size={16} color="var(--text-tertiary)" />
+            <div className="settings-item-value">
+              <span>0 KB used</span>
+              <ChevronRight size={16} />
+            </div>
           </div>
           <div className="settings-item">
             <div className="settings-item-left">
-              <div className="settings-item-icon" style={{ background: '#007aff22' }}>
-                <Shield size={16} />
+              <div className="settings-item-icon" style={{ background: '#ff3b3022' }}>
+                <Trash size={16} />
               </div>
-              <span className="settings-item-label">Privacy</span>
+              <span className="settings-item-label" style={{ color: '#ff3b30' }}>Clear Cache</span>
             </div>
-            <ChevronRight size={16} color="var(--text-tertiary)" />
           </div>
-          <div className="settings-item">
-            <div className="settings-item-left">
-              <div className="settings-item-icon" style={{ background: '#8e8e9322' }}>
-                <HelpCircle size={16} />
-              </div>
-              <span className="settings-item-label">Help & Support</span>
-            </div>
-            <ChevronRight size={16} color="var(--text-tertiary)" />
-          </div>
+        </div>
+      </div>
+
+      <div className="settings-group">
+        <div className="settings-group-title">About</div>
+        <div className="settings-card">
           <div className="settings-item">
             <div className="settings-item-left">
               <div className="settings-item-icon" style={{ background: '#48484a22' }}>
                 <Info size={16} />
               </div>
-              <span className="settings-item-label">About Mozikako</span>
+              <span className="settings-item-label">Version</span>
             </div>
-            <div className="settings-item-value">
-              <span>v1.0.0</span>
-              <ChevronRight size={16} />
+            <span className="settings-item-value">1.1.0</span>
+          </div>
+          <div className="settings-item">
+            <div className="settings-item-left">
+              <div className="settings-item-icon" style={{ background: '#48484a22' }}>
+                <Shield size={16} />
+              </div>
+              <span className="settings-item-label">Terms of Service</span>
             </div>
+            <ChevronRight size={16} />
           </div>
         </div>
+      </div>
+
+      <div className="settings-footer">
+        <p>Mozikako is a unified music experience.</p>
+        <span>Made with ❤️ for Music Lovers</span>
       </div>
     </motion.div>
   );
@@ -894,12 +1063,71 @@ function App() {
     );
   };
 
+  const renderNowPlayingBar = () => {
+    if (!player.currentTrack || isFullPlayer) return null;
+    return (
+      <motion.div 
+        initial={{ y: 80, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        exit={{ y: 80, opacity: 0 }}
+        className="now-playing-bar" 
+        onClick={() => setIsFullPlayer(true)}
+      >
+        <img className="now-playing-img" src={player.currentTrack.image} alt="Now Playing" />
+        <div className="now-playing-info">
+          <div className="now-playing-title">{player.currentTrack.title}</div>
+          <div className="now-playing-artist">
+            {player.currentTrack.artist} • <span className="source-label">{player.currentTrack.source || 'iTunes'}</span>
+          </div>
+        </div>
+        <div className="now-playing-controls">
+          <button onClick={(e) => { e.stopPropagation(); player.togglePlay(); }}>
+            {player.isPlaying ? <Pause size={22} fill="white" /> : <Play size={22} fill="white" />}
+          </button>
+          <button onClick={(e) => { e.stopPropagation(); player.nextTrack(); }}>
+            <SkipForward size={22} fill="white" />
+          </button>
+        </div>
+        <div className="progress-line">
+          <div className="progress-line-fill" style={{ width: `${player.progress}%` }} />
+        </div>
+        {player.isLoading && (
+          <div className="now-playing-loading">
+            <Loader size={14} className="spin" />
+          </div>
+        )}
+      </motion.div>
+    );
+  };
+
   /* ============================================
      RENDER
      ============================================ */
+  if (showSplash) {
+    return (
+      <div className="splash-screen">
+        <motion.div 
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ duration: 0.8, ease: "easeOut" }}
+          className="splash-logo"
+        >
+          <div className="splash-icon-wrapper">
+            <Music size={64} color="white" />
+          </div>
+          <h1>Mozikako</h1>
+          <p>Music without boundaries</p>
+        </motion.div>
+        <div className="splash-loader">
+          <div className="loader-bar"></div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="app-shell">
-      {/* Main Content */}
+      {/* Main Content Scrollable Area */}
       <div className="app-container">
         <AnimatePresence mode="wait">
           {activeTab === 'home' && renderHome()}
@@ -909,50 +1137,40 @@ function App() {
         </AnimatePresence>
       </div>
 
-      {/* Floating Smart Mix Button */}
-      {activeTab !== 'settings' && !isFullPlayer && (
-        <button 
-          className="smart-mix-fab glass"
-          onClick={() => setIsSmartMixOpen(true)}
-        >
-          <Sparkles size={20} />
-          <span>Smart Mix</span>
-        </button>
-      )}
-
-      {/* Now Playing Bar — Connected to real player */}
-      {player.currentTrack && !isFullPlayer && (
-        <div className="now-playing-bar" onClick={() => setIsFullPlayer(true)}>
-          <img className="now-playing-img" src={player.currentTrack.image} alt="Now Playing" />
-          <div className="now-playing-info">
-            <div className="now-playing-title">{player.currentTrack.title}</div>
-            <div className="now-playing-artist">{player.currentTrack.artist}</div>
-          </div>
-          <div className="now-playing-controls">
-            <button onClick={(e) => { e.stopPropagation(); player.togglePlay(); }}>
-              {player.isPlaying ? <Pause size={22} fill="white" /> : <Play size={22} fill="white" />}
-            </button>
-            <button onClick={(e) => { e.stopPropagation(); player.nextTrack(); }}>
-              <SkipForward size={22} fill="white" />
-            </button>
-          </div>
-          <div className="progress-line">
-            <div className="progress-line-fill" style={{ width: `${player.progress}%` }} />
-          </div>
-          {player.isLoading && (
-            <div className="now-playing-loading">
-              <Loader size={14} className="spin" />
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Full Screen Player */}
+      {/* Persistent UI Elements */}
       <AnimatePresence>
+        {!isFullPlayer && activeTab !== 'settings' && (
+          <button 
+            className="smart-mix-fab glass"
+            onClick={() => setIsSmartMixOpen(true)}
+          >
+            <Sparkles size={20} />
+            <span>Smart Mix</span>
+          </button>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {renderNowPlayingBar()}
         {isFullPlayer && renderFullPlayer()}
       </AnimatePresence>
 
-      {/* Smart Mix Modal */}
+      {/* Toast Notification */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div 
+            initial={{ y: 50, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 50, opacity: 0 }}
+            className="toast glass"
+          >
+            {toast.icon}
+            <span>{toast.message}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Modals */}
       <AnimatePresence>
         {isSmartMixOpen && (
           <motion.div 
@@ -1013,9 +1231,9 @@ function App() {
               <div className="generate-section">
                 <div className="wave-bg" />
                 <button 
-                  className="generate-btn"
-                  onClick={generateSmartMix}
-                  disabled={isGeneratingMix}
+                   className="generate-btn"
+                   onClick={generateSmartMix}
+                   disabled={isGeneratingMix}
                 >
                   {isGeneratingMix ? (
                     <>

@@ -4,11 +4,59 @@
  */
 
 const ITUNES_BASE = 'https://itunes.apple.com';
-const YT_SEARCH_BASE = 'https://www.youtube.com';
+const DEEZER_BASE = 'https://api.deezer.com';
 
 /* ─────────────────────────────────────────
-   iTunes / Apple Music Search
-   Returns real tracks with 30s preview URLs
+   YouTube API Search (Real)
+   ───────────────────────────────────────── */
+export async function searchYouTube(query, limit = 4) {
+  const apiKey = import.meta.env.VITE_YOUTUBE_API_KEY;
+  if (!apiKey || apiKey === 'votre_cle_api_youtube_ici') return getMockYouTubeResults(query);
+
+  try {
+    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=${limit}&q=${encodeURIComponent(query)}&type=video&key=${apiKey}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    return (data.items || []).map(item => ({
+      id: item.id.videoId,
+      title: item.snippet.title,
+      channel: item.snippet.channelTitle,
+      image: item.snippet.thumbnails.medium.url,
+      views: 'Real Video',
+      duration: 'Live'
+    }));
+  } catch (e) {
+    console.warn('YouTube API failed, using mock:', e);
+    return getMockYouTubeResults(query);
+  }
+}
+
+/* ─────────────────────────────────────────
+   Deezer API Search
+   ───────────────────────────────────────── */
+export async function searchDeezer(query, limit = 5) {
+  try {
+    // Note: Deezer API requires JSONP or a proxy usually for client-side
+    // Using a public CORS proxy for demo if needed, but iTunes is cleaner
+    const url = `https://api.deezer.com/search?q=${encodeURIComponent(query)}&limit=${limit}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    return (data.data || []).map(item => ({
+      id: item.id,
+      title: item.title,
+      artist: item.artist.name,
+      album: item.album.title,
+      image: item.album.cover_medium,
+      preview: item.preview,
+      source: 'deezer'
+    }));
+  } catch (e) {
+    return [];
+  }
+}
+
+/* ─────────────────────────────────────────
+   iTunes / Apple Music Search (Existing)
    ───────────────────────────────────────── */
 export async function searchTracks(query, limit = 6) {
   if (!query.trim()) return [];
@@ -22,13 +70,12 @@ export async function searchTracks(query, limit = 6) {
     album: item.collectionName,
     duration: formatMs(item.trackTimeMillis),
     image: item.artworkUrl100?.replace('100x100', '400x400') || '',
-    preview: item.previewUrl || null,          // 30-second MP3 preview
+    preview: item.previewUrl || null,
     source: 'apple',
-    price: item.trackPrice,
-    genre: item.primaryGenreName,
     releaseDate: item.releaseDate?.slice(0, 4),
   }));
 }
+
 
 export async function searchAlbums(query, limit = 6) {
   if (!query.trim()) return [];

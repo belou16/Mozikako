@@ -20,14 +20,17 @@ if not exist node_modules (
     call npm install
 )
 
+echo [INFO] Nettoyage des ports (si necessaire)...
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr :5173') do taskkill /f /pid %%a >nul 2>&1
+
 echo [INFO] Demarrage du serveur de test...
-echo [INFO] L'application s'ouvrira automatiquement dans un instant.
+echo [INFO] L'application s'ouvrira automatiquement sur http://localhost:5173
 echo.
 
-REM Ouvrir le navigateur en mode "app" (sans interface de navigateur) sur Edge ou Chrome
+REM Ouvrir le navigateur
 start msedge --app=http://localhost:5173 || start chrome --app=http://localhost:5173 || start http://localhost:5173
 
 REM Lancer le serveur Vite
-call npm run dev
+call npm run dev -- --port 5173
 
 pause
