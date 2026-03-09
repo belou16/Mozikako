@@ -1,51 +1,75 @@
-# 🎵 Mozikako
+# Mozikako
 
-**Mozikako** est une application musicale minimaliste et puissante qui centralise vos recherches sur Spotify, YouTube et iTunes. Écoutez des extraits, créez des mix intelligents via IA et gérez votre bibliothèque en un seul endroit.
+Mozikako est un agregateur musical universel qui centralise Spotify, Apple Music, Deezer et YouTube dans une interface unique.
 
-## 🚀 Lancement Rapide (Windows)
+## Stack actuelle
 
-Double-cliquez simplement sur :
-👉 **`Lancer_Mozikako.bat`**
+- Frontend: React + Vite + Capacitor
+- Backend: Node.js + Express
+- Objectif architecture: OAuth multi-provider, recherche universelle, synchronisation playlists
 
-Cela va :
-1. Installer les dépendances nécessaires (la première fois).
-2. Lancer le serveur local.
-3. Ouvrir l'application dans une fenêtre dédiée.
+## Structure ajoutee
 
-## ✨ Fonctionnalités
-
-- **Recherche Universelle** : Accédez instantanément aux titres d'iTunes et aux vidéos YouTube.
-- **Lecteur Audio Intégré** : Écoutez les extraits de 30 secondes (via iTunes) avec une interface premium.
-- **Smart Mix (IA)** : Générez des playlists instantanées basées sur votre "vibe" (Focus, Chill, Party, Energy).
-- **Design Apple Minimalist** : Une interface sombre, fluide et optimisée pour mobile et desktop.
-- **Bibliothèque Personnelle** : Likez vos morceaux préférés pour les retrouver plus tard.
-- **PWA Ready** : Installable sur votre téléphone ou PC comme une application native.
-
-## 🛠️ Commandes Développeur
-
-Si vous préférez utiliser le terminal :
-
-```bash
-# Installation
-npm install
-
-# Développement
-npm run dev
-
-# Construction (Production)
-npm run build
-
-# Android (Nécessite Android Studio)
-npx cap sync android
-npx cap open android
+```txt
+server/
+  index.js
+  routes/
+    auth.js
+    search.js
+    playlists.js
+  services/
+    universalSearch.js
+src/
+  App.jsx
+  App.css
+  index.css
+  services/
+    musicApi.js
 ```
 
-## 📱 Android & Publication
+## Endpoints disponibles
 
-L'application est configurée avec **Capacitor**. Pour générer l'APK :
-1. `npm run build`
-2. `npx cap sync android`
-3. Ouvrez le dossier `android` dans Android Studio et générez le "Signed Bundle/APK".
+- `GET /api/v1/health`
+- `GET /api/v1/auth/providers/status`
+- `GET /api/v1/auth/:provider/connect`
+- `GET /api/v1/auth/:provider/callback`
+- `POST /api/v1/auth/:provider/refresh`
+- `DELETE /api/v1/auth/:provider/disconnect`
+- `GET /api/v1/search?q=...&providers=spotify,apple,deezer,youtube`
+- `GET /api/v1/playlists`
+- `POST /api/v1/playlists/import`
+- `POST /api/v1/playlists/export`
+- `POST /api/v1/playlists/transfer`
 
----
-*Fait avec ❤️ pour une expérience musicale sans frontières.*
+## Demarrage
+
+1. Copier `.env.example` vers `.env`
+2. Installer les dependances:
+
+```bash
+npm install
+```
+
+3. Lancer frontend + API:
+
+```bash
+npm run dev
+```
+
+4. URL utiles:
+
+- Frontend: `http://localhost:5173`
+- API: `http://localhost:3001/api/v1/health`
+
+## Notes importantes
+
+- Les endpoints OAuth sont des stubs prets a brancher avec les credentials reels.
+- La recherche universelle fusionne deja Apple + Deezer + YouTube (stub) dans un format unifie.
+- Spotify est active cote UI et routes auth, mais la recherche Spotify est a brancher apres ajout du token flow serveur.
+
+## Etapes suivantes recommandees
+
+1. Brancher OAuth complet (code exchange + refresh) en base securisee.
+2. Ajouter connecteurs Spotify/Apple/YouTube reels cote backend.
+3. Implementer moteur de sync playlists asynchrone (jobs).
+4. Ajouter Firebase ou MongoDB pour persistance utilisateurs/tokens.

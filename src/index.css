@@ -1,96 +1,30 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&display=swap');
 
 :root {
-  --bg-primary: #000000;
-  --bg-secondary: #050505;
-  --bg-tertiary: #121214;
-  --accent: #5856d6;
-  --accent-secondary: #007aff;
-  --accent-gradient: linear-gradient(135deg, #5856d6 0%, #007aff 100%);
-  --text-primary: #ffffff;
-  --text-secondary: #a1a1a6;
-  --text-tertiary: #424245;
-  --glass-bg: rgba(20, 20, 20, 0.75);
-  --glass-border: rgba(255, 255, 255, 0.08);
-  --safe-area-top: env(safe-area-inset-top, 0px);
-  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
-  --selection-color: rgba(88, 86, 214, 0.3);
+  --paper: #f5f7fb;
+  --ink: #1f2833;
+  --muted: #5d6673;
+  --teal: #0984e3;
+  --card-bg: rgba(255, 255, 255, 0.86);
+  --card-border: rgba(17, 36, 63, 0.12);
+  --card-shadow: 0 12px 30px rgba(26, 47, 80, 0.08);
 }
 
 * {
   box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-  -webkit-tap-highlight-color: transparent;
-  user-select: none;
 }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-  line-height: 1.5;
-  overflow: hidden;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  margin: 0;
+  font-family: 'Sora', 'Segoe UI', Tahoma, sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 10% -5%, rgba(9, 132, 227, 0.14), transparent 40%),
+    radial-gradient(circle at 95% 0%, rgba(72, 219, 251, 0.12), transparent 35%),
+    var(--paper);
+  min-height: 100vh;
 }
 
 #root {
-  height: 100vh;
-  width: 100vw;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-primary);
+  min-height: 100vh;
 }
-
-.app-shell {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  width: 100%;
-  max-width: 430px;
-  margin: 0 auto;
-  position: relative;
-  overflow: hidden;
-}
-
-.app-container {
-  flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: calc(var(--safe-area-top) + 20px) 16px calc(var(--safe-area-bottom) + 160px) 16px;
-  -webkit-overflow-scrolling: touch;
-}
-
-/* Custom Scrollbar */
-.app-container::-webkit-scrollbar {
-  width: 4px;
-}
-.app-container::-webkit-scrollbar-thumb {
-  background: var(--text-tertiary);
-  border-radius: 10px;
-}
-
-h1, h2, h3 {
-  font-weight: 700;
-  letter-spacing: -0.5px;
-}
-
-.glass {
-  background: var(--glass-bg);
-  backdrop-filter: blur(25px) saturate(180%);
-  -webkit-backdrop-filter: blur(25px) saturate(180%);
-  border: 1px solid var(--glass-border);
-}
-
-/* Animations transitions */
-.page-transition-enter {
-  opacity: 0;
-  transform: scale(0.98);
-}
-.page-transition-enter-active {
-  opacity: 1;
-  transform: scale(1);
-  transition: opacity 300ms, transform 300ms cubic-bezier(0.1, 0.7, 0.1, 1);
-}
-
