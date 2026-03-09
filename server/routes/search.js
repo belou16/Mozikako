@@ -6,7 +6,7 @@ const router = Router();
 router.get('/', async (req, res) => {
   const q = String(req.query.q || '').trim();
   const limit = Math.max(1, Math.min(20, Number(req.query.limit || 8)));
-  const providers = String(req.query.providers || 'apple,deezer,youtube')
+  const providers = String(req.query.providers || 'spotify,apple,deezer,youtube')
     .split(',')
     .map((p) => p.trim().toLowerCase())
     .filter(Boolean);

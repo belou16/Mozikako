@@ -40,6 +40,7 @@ src/
 - `POST /api/v1/playlists/import`
 - `POST /api/v1/playlists/export`
 - `POST /api/v1/playlists/transfer`
+- `GET /api/v1/playlists/jobs/:jobId`
 
 ## Demarrage
 

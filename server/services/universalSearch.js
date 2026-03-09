@@ -92,10 +92,29 @@ function searchYouTubeStub(query) {
   ];
 }
 
+function searchSpotifyStub(query) {
+  return [
+    {
+      title: query,
+      artist: 'Spotify Catalog',
+      album: null,
+      coverUrl: null,
+      source: {
+        provider: 'spotify',
+        providerTrackId: `spotify_stub_${query.toLowerCase().replace(/\s+/g, '_')}`,
+        previewUrl: null,
+        externalUrl: `https://open.spotify.com/search/${encodeURIComponent(query)}`,
+        playable: true,
+      },
+    },
+  ];
+}
+
 export async function universalSearch(query, providers = ['apple', 'deezer', 'youtube'], limit = 8) {
   const wanted = new Set(providers);
   const tasks = [];
 
+  if (wanted.has('spotify')) tasks.push(Promise.resolve(searchSpotifyStub(query)));
   if (wanted.has('apple')) tasks.push(searchApple(query, limit));
   if (wanted.has('deezer')) tasks.push(searchDeezer(query, limit));
   if (wanted.has('youtube')) tasks.push(Promise.resolve(searchYouTubeStub(query)));

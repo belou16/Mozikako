@@ -37,4 +37,14 @@ router.post('/transfer', (req, res) => {
   });
 });
 
+router.get('/jobs/:jobId', (req, res) => {
+  const { jobId } = req.params;
+  res.json({
+    jobId,
+    status: 'queued',
+    progress: 0,
+    message: 'Job engine is scaffolded. Connect BullMQ or Cloud Tasks for real execution.',
+  });
+});
+
 export default router;
