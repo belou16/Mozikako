@@ -47,16 +47,26 @@ router.get('/:provider/connect', (req, res) => {
 router.get('/:provider/callback', async (req, res) => {
   const { provider } = req.params;
   const { code } = req.query;
+  const mode = String(req.query.mode || 'redirect');
+  const webOrigin = process.env.WEB_ORIGIN || 'http://localhost:5173';
+
   if (!providers.includes(provider)) {
     return res.status(400).json({ error: 'Unknown provider' });
   }
   if (!code) {
+    if (mode === 'redirect') {
+      return res.redirect(`${webOrigin}/?oauth=error&reason=${encodeURIComponent('Missing OAuth code')}`);
+    }
     return res.status(400).json({ error: 'Missing OAuth code' });
   }
 
   try {
     const tokenSet = await exchangeCodeForToken(provider, String(code));
     const saved = await setConnection(provider, tokenSet);
+
+    if (mode === 'redirect') {
+      return res.redirect(`${webOrigin}/?oauth=success&provider=${encodeURIComponent(provider)}`);
+    }
 
     return res.json({
       provider,
@@ -65,6 +75,10 @@ router.get('/:provider/callback', async (req, res) => {
       updatedAt: saved.updatedAt,
     });
   } catch (error) {
+    if (mode === 'redirect') {
+      const reason = error instanceof Error ? error.message : String(error);
+      return res.redirect(`${webOrigin}/?oauth=error&reason=${encodeURIComponent(reason)}`);
+    }
     return res.status(500).json({
       provider,
       connected: false,

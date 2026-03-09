@@ -170,6 +170,21 @@
   overflow: auto;
 }
 
+.banner {
+  margin: 12px 20px 0;
+  border: 1px solid rgba(54, 207, 143, 0.35);
+  background: rgba(54, 207, 143, 0.12);
+  color: #b8ffd9;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.banner.error {
+  border-color: rgba(255, 99, 132, 0.4);
+  background: rgba(255, 99, 132, 0.12);
+  color: #ffd0db;
+}
+
 .view-grid {
   display: grid;
   gap: 16px;
@@ -413,7 +428,7 @@
 .table-head,
 .table-row {
   display: grid;
-  grid-template-columns: 2fr 1.3fr 1fr;
+  grid-template-columns: 2fr 1.3fr 1fr auto;
   align-items: center;
   gap: 10px;
 }
@@ -432,6 +447,27 @@
   background: rgba(20, 17, 44, 0.75);
   padding: 9px 12px;
   color: var(--text-main);
+}
+
+.table-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 7px;
+}
+
+.play-action,
+.open-action {
+  border: 1px solid var(--border-soft);
+  background: rgba(38, 31, 80, 0.82);
+  color: var(--text-main);
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 0.75rem;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   cursor: pointer;
 }
 
@@ -596,6 +632,10 @@
   gap: 8px;
 }
 
+.queue-volume input[type='range'] {
+  width: 110px;
+}
+
 .queue-volume div,
 .volume-mini div {
   flex: 1;
@@ -688,6 +728,22 @@
   color: var(--text-dim);
 }
 
+.prefs-list select {
+  border: 1px solid var(--border-soft);
+  background: rgba(28, 24, 58, 0.9);
+  color: var(--text-main);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.empty-player {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  color: var(--text-dim);
+  padding: 40px 0;
+}
+
 .bottom-player {
   border-top: 1px solid var(--border-soft);
   padding: 10px 16px;
@@ -731,6 +787,15 @@
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.transport button:disabled,
+.play-circle:disabled,
+.service-card button:disabled,
+.play-mini:disabled,
+.search-bar button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .play-mini {
@@ -842,6 +907,10 @@
   .content-zone,
   .topbar {
     padding: 12px;
+  }
+
+  .banner {
+    margin: 10px 12px 0;
   }
 
   .recent-grid,

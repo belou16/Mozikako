@@ -5,8 +5,6 @@ import {
   Disc3,
   Headphones,
   Home,
-  LayoutGrid,
-  Library,
   ListMusic,
   Pause,
   Play,
@@ -22,6 +20,7 @@ import {
   getProviderConnectLink,
   universalSearch,
 } from './services/musicApi';
+import { useAudioPlayer } from './hooks/useAudioPlayer';
 import './App.css';
 
 const providerOrder = ['spotify', 'apple', 'deezer', 'youtube'];
@@ -40,7 +39,7 @@ const navItems = [
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
-const recentPlays = [
+const fallbackRecent = [
   {
     id: 'r1',
     title: 'Ethereal Drift',
@@ -71,16 +70,23 @@ const recentPlays = [
   },
 ];
 
-const starterMixes = [
+const defaultMixes = [
   { id: 'm1', name: 'Deep Focus', subtitle: '42 tracks - Spotify', token: 'D', gradient: 'from-blue' },
   { id: 'm2', name: 'Running High', subtitle: '18 tracks - YouTube', token: 'R', gradient: 'from-pink' },
   { id: 'm3', name: 'Weekend Chill', subtitle: '65 tracks - Multi-platform', token: 'W', gradient: 'from-green' },
-  { id: 'm4', name: 'Jazz Essentials', subtitle: '24 tracks - Apple Music', token: 'J', gradient: 'from-orange' },
-  { id: 'm5', name: 'Lofi Coding', subtitle: '110 tracks - YouTube', token: 'L', gradient: 'from-cyan' },
 ];
 
+function loadPersisted(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function ProviderPill({ provider }) {
-  const meta = providerMeta[provider] || { label: provider, badge: provider.slice(0, 2).toUpperCase() };
+  const meta = providerMeta[provider] || { label: provider };
   return <span className={`provider-pill ${meta.colorClass || ''}`}>{meta.label}</span>;
 }
 
@@ -90,22 +96,16 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [results, setResults] = useState([]);
   const [error, setError] = useState('');
+  const [banner, setBanner] = useState('');
   const [providerStatus, setProviderStatus] = useState({});
   const [isConnecting, setIsConnecting] = useState('');
-  const [searchProviders, setSearchProviders] = useState({
-    spotify: true,
-    apple: true,
-    deezer: true,
-    youtube: true,
-  });
-  const [mixes, setMixes] = useState(starterMixes);
-  const [currentTrack, setCurrentTrack] = useState({
-    title: 'Neon Horizons',
-    artist: 'Luminary Collective',
-    coverUrl:
-      'https://images.unsplash.com/photo-1614149162883-504ce4d13909?auto=format&fit=crop&w=900&q=80',
-    sourceProvider: 'spotify',
-  });
+  const [searchProviders, setSearchProviders] = useState({ spotify: true, apple: true, deezer: true, youtube: true });
+  const [mixes, setMixes] = useState(() => loadPersisted('mozikako_mixes', defaultMixes));
+  const [recentPlays, setRecentPlays] = useState(() => loadPersisted('mozikako_recent', fallbackRecent));
+  const [playerFallbackTrack, setPlayerFallbackTrack] = useState(null);
+  const [audioQuality, setAudioQuality] = useState(() => localStorage.getItem('mozikako_quality') || 'High (320kbps)');
+
+  const player = useAudioPlayer();
 
   const selectedProviders = useMemo(
     () => providerOrder.filter((provider) => searchProviders[provider]),
@@ -114,25 +114,102 @@ function App() {
 
   const bestMatch = results[0] || null;
 
+  const refreshProviderStatus = async () => {
+    const payload = await fetchProviderStatus();
+    const nextStatus = {};
+    for (const item of payload.providers || []) {
+      nextStatus[item.provider] = item.connected;
+    }
+    setProviderStatus(nextStatus);
+  };
+
   useEffect(() => {
-    let mounted = true;
-    fetchProviderStatus()
-      .then((payload) => {
-        if (!mounted) return;
-        const nextStatus = {};
-        for (const item of payload.providers || []) {
-          nextStatus[item.provider] = item.connected;
-        }
-        setProviderStatus(nextStatus);
-      })
-      .catch(() => {
-        if (!mounted) return;
-        setProviderStatus({});
-      });
-    return () => {
-      mounted = false;
-    };
+    refreshProviderStatus().catch(() => setProviderStatus({}));
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem('mozikako_mixes', JSON.stringify(mixes));
+  }, [mixes]);
+
+  useEffect(() => {
+    localStorage.setItem('mozikako_recent', JSON.stringify(recentPlays.slice(0, 8)));
+  }, [recentPlays]);
+
+  useEffect(() => {
+    localStorage.setItem('mozikako_quality', audioQuality);
+  }, [audioQuality]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const oauth = params.get('oauth');
+    const provider = params.get('provider');
+    const reason = params.get('reason');
+
+    if (oauth === 'success' && provider) {
+      setBanner(`${providerMeta[provider]?.label || provider} connected successfully.`);
+      setActiveView('settings');
+      refreshProviderStatus().catch(() => undefined);
+      window.history.replaceState({}, '', window.location.pathname);
+      return;
+    }
+
+    if (oauth === 'error') {
+      setError(reason ? decodeURIComponent(reason) : 'OAuth connection failed.');
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+
+  const toPlayableTrack = (track) => {
+    const playableSource = (track.sources || []).find((source) => source.previewUrl);
+    const primarySource = playableSource || track.sources?.[0] || null;
+    if (!primarySource) return null;
+
+    return {
+      id: `${track.id}::${primarySource.provider}`,
+      title: track.title,
+      artist: track.artist,
+      image:
+        track.coverUrl ||
+        'https://images.unsplash.com/photo-1511379938547-c1f69419868d?auto=format&fit=crop&w=900&q=80',
+      preview: playableSource?.previewUrl || null,
+      sourceProvider: primarySource.provider,
+      externalUrl: primarySource.externalUrl || null,
+    };
+  };
+
+  const buildPlayableQueue = (tracks) => tracks.map(toPlayableTrack).filter((item) => item?.preview);
+
+  const pushRecent = (entry) => {
+    setRecentPlays((current) => {
+      const next = [entry, ...current.filter((item) => item.title !== entry.title || item.artist !== entry.artist)];
+      return next.slice(0, 8);
+    });
+  };
+
+  const playUnifiedTrack = (track, queueTracks = results) => {
+    const mapped = toPlayableTrack(track);
+    if (!mapped) return;
+
+    setPlayerFallbackTrack(mapped);
+    pushRecent({
+      id: `${Date.now()}_${mapped.id}`,
+      title: mapped.title,
+      artist: mapped.artist,
+      image: mapped.image,
+      provider: mapped.sourceProvider,
+    });
+
+    if (mapped.preview) {
+      const queue = buildPlayableQueue(queueTracks);
+      player.playTrack(mapped, queue.length ? queue : null);
+      return;
+    }
+
+    if (mapped.externalUrl) {
+      window.open(mapped.externalUrl, '_blank', 'noopener,noreferrer');
+      setBanner('No preview available. Opened track on provider.');
+    }
+  };
 
   const runSearch = async (term) => {
     const trimmed = term.trim();
@@ -150,21 +227,16 @@ function App() {
 
     try {
       setError('');
+      setBanner('');
       setIsLoading(true);
       const payload = await universalSearch(trimmed, selectedProviders);
       const tracks = payload.tracks || [];
       setResults(tracks);
-      if (tracks[0]) {
-        setCurrentTrack({
-          title: tracks[0].title,
-          artist: tracks[0].artist,
-          coverUrl:
-            tracks[0].coverUrl ||
-            'https://images.unsplash.com/photo-1511379938547-c1f69419868d?auto=format&fit=crop&w=900&q=80',
-          sourceProvider: tracks[0].sources?.[0]?.provider || 'spotify',
-        });
-      }
       setActiveView('search');
+
+      if (!tracks.length) {
+        setBanner('No results found on selected platforms.');
+      }
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Search is unavailable right now.');
       setResults([]);
@@ -185,6 +257,7 @@ function App() {
   const connectProvider = async (provider) => {
     try {
       setIsConnecting(provider);
+      setError('');
       const data = await getProviderConnectLink(provider);
       if (data.authUrl) {
         window.location.href = data.authUrl;
@@ -202,18 +275,10 @@ function App() {
     try {
       await disconnectProvider(provider);
       setProviderStatus((current) => ({ ...current, [provider]: false }));
+      setBanner(`${providerMeta[provider]?.label || provider} disconnected.`);
     } catch {
       setError('Unable to disconnect provider.');
     }
-  };
-
-  const handleQuickPlay = (entry) => {
-    setCurrentTrack({
-      title: entry.title,
-      artist: entry.artist,
-      coverUrl: entry.image || entry.coverUrl,
-      sourceProvider: entry.provider || entry.sourceProvider || 'spotify',
-    });
   };
 
   const createNewMix = () => {
@@ -225,7 +290,13 @@ function App() {
       gradient: 'from-purple',
     };
     setMixes((current) => [next, ...current]);
+    setBanner('New mix created.');
   };
+
+  const nowPlaying = player.currentTrack || playerFallbackTrack;
+  const upNext = player.queue.length
+    ? player.queue.filter((item) => item.id !== player.currentTrack?.id).slice(0, 5)
+    : results.slice(0, 5).map(toPlayableTrack).filter(Boolean);
 
   const renderHome = () => (
     <section className="view-grid">
@@ -237,11 +308,25 @@ function App() {
       <div className="block-card">
         <div className="section-head">
           <h2>Recently Played</h2>
-          <button type="button" className="ghost-btn">View All</button>
+          <button type="button" className="ghost-btn" onClick={() => setActiveView('search')}>Discover</button>
         </div>
         <div className="recent-grid">
           {recentPlays.map((item) => (
-            <button key={item.id} type="button" className="recent-card" onClick={() => handleQuickPlay(item)}>
+            <button
+              key={item.id}
+              type="button"
+              className="recent-card"
+              onClick={() =>
+                setPlayerFallbackTrack({
+                  id: item.id,
+                  title: item.title,
+                  artist: item.artist,
+                  image: item.image,
+                  sourceProvider: item.provider,
+                  preview: null,
+                })
+              }
+            >
               <img src={item.image} alt={item.title} />
               <strong>{item.title}</strong>
               <span>{item.artist}</span>
@@ -329,12 +414,7 @@ function App() {
                 ))}
               </div>
             </div>
-            <button type="button" className="play-now" onClick={() => handleQuickPlay({
-              title: bestMatch.title,
-              artist: bestMatch.artist,
-              coverUrl: bestMatch.coverUrl,
-              sourceProvider: bestMatch.sources?.[0]?.provider,
-            })}>
+            <button type="button" className="play-now" onClick={() => playUnifiedTrack(bestMatch)}>
               Play Now
             </button>
           </article>
@@ -354,61 +434,74 @@ function App() {
             <span>Album</span>
             <span>Available On</span>
           </div>
-          {results.map((item) => (
-            <button
-              type="button"
-              key={item.id}
-              className="table-row"
-              onClick={() =>
-                handleQuickPlay({
-                  title: item.title,
-                  artist: item.artist,
-                  coverUrl: item.coverUrl,
-                  sourceProvider: item.sources?.[0]?.provider,
-                })
-              }
-            >
-              <span className="title-col">
-                <strong>{item.title}</strong>
-                <small>{item.artist}</small>
-              </span>
-              <span>{item.album || 'Single'}</span>
-              <span className="provider-stack">
-                {(item.sources || []).slice(0, 3).map((source) => (
-                  <span key={`${item.id}-${source.provider}`} className={`tiny-provider ${providerMeta[source.provider]?.colorClass || ''}`}>
-                    {providerMeta[source.provider]?.badge || source.provider.slice(0, 2).toUpperCase()}
-                  </span>
-                ))}
-              </span>
-            </button>
-          ))}
+          {results.map((item) => {
+            const mapped = toPlayableTrack(item);
+            return (
+              <div key={item.id} className="table-row">
+                <span className="title-col">
+                  <strong>{item.title}</strong>
+                  <small>{item.artist}</small>
+                </span>
+                <span>{item.album || 'Single'}</span>
+                <span className="provider-stack">
+                  {(item.sources || []).slice(0, 3).map((source) => (
+                    <span
+                      key={`${item.id}-${source.provider}`}
+                      className={`tiny-provider ${providerMeta[source.provider]?.colorClass || ''}`}
+                    >
+                      {providerMeta[source.provider]?.badge || source.provider.slice(0, 2).toUpperCase()}
+                    </span>
+                  ))}
+                </span>
+                <span className="table-actions">
+                  <button type="button" className="play-action" onClick={() => playUnifiedTrack(item)}>
+                    <Play size={12} fill="currentColor" />
+                    {mapped?.preview ? 'Preview' : 'Open'}
+                  </button>
+                  {mapped?.externalUrl ? (
+                    <a href={mapped.externalUrl} target="_blank" rel="noreferrer" className="open-action">Provider</a>
+                  ) : null}
+                </span>
+              </div>
+            );
+          })}
         </div>
       </div>
     </section>
   );
 
-  const upNext = results.length ? results.slice(1, 5) : recentPlays;
-
   const renderPlayer = () => (
     <section className="player-layout">
       <article className="player-main block-card">
-        <img src={currentTrack.coverUrl} alt={currentTrack.title} className="player-art" />
-        <h1>{currentTrack.title}</h1>
-        <p>{currentTrack.artist}</p>
-        <div className="progress-wrap">
-          <div className="progress-line"><span style={{ width: '46%' }} /></div>
-          <div className="time-row"><small>01:42</small><small>03:54</small></div>
-        </div>
-        <div className="player-controls">
-          <button type="button">&#10226;</button>
-          <button type="button">&#9198;</button>
-          <button type="button" className="play-circle"><Play size={22} fill="currentColor" /></button>
-          <button type="button">&#9197;</button>
-          <button type="button">&#10227;</button>
-        </div>
-        <div className="playing-source">
-          Playing from <strong>{providerMeta[currentTrack.sourceProvider]?.label || 'Universal Source'}</strong>
-        </div>
+        {nowPlaying ? (
+          <>
+            <img src={nowPlaying.image} alt={nowPlaying.title} className="player-art" />
+            <h1>{nowPlaying.title}</h1>
+            <p>{nowPlaying.artist}</p>
+            <div className="progress-wrap">
+              <div className="progress-line"><span style={{ width: `${player.progress || 0}%` }} /></div>
+              <div className="time-row">
+                <small>{player.formatTime(player.currentTime)}</small>
+                <small>{player.formatTime(player.duration)}</small>
+              </div>
+            </div>
+            <div className="player-controls">
+              <button type="button" onClick={player.prevTrack}>&#9198;</button>
+              <button type="button" className="play-circle" onClick={player.togglePlay} disabled={!player.currentTrack?.preview}>
+                {player.isPlaying ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
+              </button>
+              <button type="button" onClick={player.nextTrack}>&#9197;</button>
+            </div>
+            <div className="playing-source">
+              Playing from <strong>{providerMeta[nowPlaying.sourceProvider]?.label || 'Universal Source'}</strong>
+            </div>
+          </>
+        ) : (
+          <div className="empty-player">
+            <Disc3 size={30} />
+            <p>Select a track from Search to start playing.</p>
+          </div>
+        )}
       </article>
 
       <aside className="queue-panel block-card">
@@ -420,20 +513,18 @@ function App() {
           {upNext.map((item) => (
             <button
               type="button"
-              key={item.id || item.title}
+              key={item.id}
               className="queue-item"
-              onClick={() =>
-                handleQuickPlay({
-                  title: item.title,
-                  artist: item.artist,
-                  coverUrl: item.coverUrl || item.image,
-                  sourceProvider: item.sources?.[0]?.provider || item.provider,
-                })
-              }
+              onClick={() => {
+                if (item.preview) {
+                  player.playTrack(item, player.queue.length ? player.queue : upNext.filter((q) => q.preview));
+                } else if (item.externalUrl) {
+                  window.open(item.externalUrl, '_blank', 'noopener,noreferrer');
+                }
+              }}
             >
               <img
                 src={
-                  item.coverUrl ||
                   item.image ||
                   'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=900&q=80'
                 }
@@ -448,7 +539,15 @@ function App() {
         </div>
         <div className="queue-volume">
           <Volume2 size={16} />
-          <div><span style={{ width: '72%' }} /></div>
+          <div><span style={{ width: `${(player.volume || 0.8) * 100}%` }} /></div>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value={player.volume}
+            onChange={(event) => player.changeVolume(Number(event.target.value))}
+          />
         </div>
       </aside>
     </section>
@@ -471,7 +570,9 @@ function App() {
       <div className="block-card">
         <div className="section-head">
           <h2>Connected Services</h2>
-          <button type="button" className="ghost-btn">Manage All</button>
+          <button type="button" className="ghost-btn" onClick={() => refreshProviderStatus().catch(() => undefined)}>
+            Refresh
+          </button>
         </div>
         <div className="service-grid">
           {providerOrder.map((provider) => {
@@ -505,7 +606,13 @@ function App() {
           <h2>Preferences</h2>
         </div>
         <div className="prefs-list">
-          <article><strong>Streaming Quality</strong><span>High (320kbps)</span></article>
+          <article>
+            <strong>Streaming Quality</strong>
+            <select value={audioQuality} onChange={(event) => setAudioQuality(event.target.value)}>
+              <option>Normal (160kbps)</option>
+              <option>High (320kbps)</option>
+            </select>
+          </article>
           <article><strong>Data Saver</strong><span>Disabled</span></article>
           <article><strong>Theme</strong><span>Neon Night</span></article>
         </div>
@@ -568,6 +675,12 @@ function App() {
           </div>
         </header>
 
+        {(banner || error) ? (
+          <div className={`banner ${error ? 'error' : ''}`}>
+            {error || banner}
+          </div>
+        ) : null}
+
         <main className="content-zone">
           {activeView === 'home' ? renderHome() : null}
           {activeView === 'search' ? renderSearch() : null}
@@ -577,20 +690,27 @@ function App() {
 
         <footer className="bottom-player">
           <div className="now-track">
-            <img src={currentTrack.coverUrl} alt={currentTrack.title} />
+            {nowPlaying ? <img src={nowPlaying.image} alt={nowPlaying.title} /> : <Disc3 size={20} />}
             <span>
-              <strong>{currentTrack.title}</strong>
-              <small>{currentTrack.artist}</small>
+              <strong>{nowPlaying?.title || 'No track selected'}</strong>
+              <small>{nowPlaying?.artist || 'Choose a track from Search'}</small>
             </span>
           </div>
           <div className="transport">
-            <button type="button">&#9198;</button>
-            <button type="button" className="play-mini"><Pause size={14} fill="currentColor" /></button>
-            <button type="button">&#9197;</button>
+            <button type="button" onClick={player.prevTrack}>&#9198;</button>
+            <button
+              type="button"
+              className="play-mini"
+              onClick={player.togglePlay}
+              disabled={!player.currentTrack?.preview}
+            >
+              {player.isPlaying ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" />}
+            </button>
+            <button type="button" onClick={player.nextTrack}>&#9197;</button>
           </div>
           <div className="volume-mini">
             <Headphones size={14} />
-            <div><span style={{ width: '62%' }} /></div>
+            <div><span style={{ width: `${(player.volume || 0.8) * 100}%` }} /></div>
           </div>
         </footer>
       </section>
