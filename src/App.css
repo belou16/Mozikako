@@ -294,6 +294,14 @@
   align-items: center;
   gap: 10px;
   background: rgba(20, 17, 44, 0.8);
+  color: var(--text-main);
+  text-align: left;
+  cursor: pointer;
+}
+
+.mix-card:hover {
+  border-color: rgba(122, 92, 255, 0.55);
+  background: rgba(30, 24, 62, 0.9);
 }
 
 .mix-card span {

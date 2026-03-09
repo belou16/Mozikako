@@ -29,7 +29,7 @@ const providerMeta = {
   spotify: { label: 'Spotify', badge: 'SP', colorClass: 'spotify' },
   apple: { label: 'Apple Music', badge: 'AM', colorClass: 'apple' },
   deezer: { label: 'Deezer', badge: 'DZ', colorClass: 'deezer' },
-  youtube: { label: 'YouTube Music', badge: 'YT', colorClass: 'youtube' },
+  youtube: { label: 'YouTube', badge: 'YT', colorClass: 'youtube' },
 };
 
 const navItems = [
@@ -104,6 +104,7 @@ function App() {
   const [recentPlays, setRecentPlays] = useState(() => loadPersisted('mozikako_recent', fallbackRecent));
   const [playerFallbackTrack, setPlayerFallbackTrack] = useState(null);
   const [audioQuality, setAudioQuality] = useState(() => localStorage.getItem('mozikako_quality') || 'High (320kbps)');
+  const [notificationCount, setNotificationCount] = useState(1);
 
   const player = useAudioPlayer();
 
@@ -113,6 +114,8 @@ function App() {
   );
 
   const bestMatch = results[0] || null;
+  const connectedProviders = providerOrder.filter((provider) => Boolean(providerStatus[provider]));
+  const hasConnectedAccount = connectedProviders.length > 0;
 
   const refreshProviderStatus = async () => {
     const payload = await fetchProviderStatus();
@@ -202,13 +205,31 @@ function App() {
     if (mapped.preview) {
       const queue = buildPlayableQueue(queueTracks);
       player.playTrack(mapped, queue.length ? queue : null);
+      setActiveView('library');
       return;
     }
 
     if (mapped.externalUrl) {
       window.open(mapped.externalUrl, '_blank', 'noopener,noreferrer');
       setBanner('No preview available. Opened track on provider.');
+      setActiveView('library');
     }
+  };
+
+  const openUpgrade = () => {
+    setActiveView('settings');
+    setBanner('Upgrade flow is ready to be connected to billing.');
+  };
+
+  const openNotifications = () => {
+    setActiveView('home');
+    setBanner(notificationCount ? 'You have updates in your music activity.' : 'No new notifications.');
+    setNotificationCount(0);
+  };
+
+  const openProfile = () => {
+    setActiveView('settings');
+    setBanner('Profile and preferences are available below.');
   };
 
   const runSearch = async (term) => {
@@ -301,7 +322,7 @@ function App() {
   const renderHome = () => (
     <section className="view-grid">
       <div className="welcome-card block-card">
-        <h1>Welcome back, Alex</h1>
+        <h1>Welcome back</h1>
         <p>Discover new sounds based on your listening profile across platforms.</p>
       </div>
 
@@ -317,14 +338,17 @@ function App() {
               type="button"
               className="recent-card"
               onClick={() =>
-                setPlayerFallbackTrack({
-                  id: item.id,
-                  title: item.title,
-                  artist: item.artist,
-                  image: item.image,
-                  sourceProvider: item.provider,
-                  preview: null,
-                })
+                {
+                  setPlayerFallbackTrack({
+                    id: item.id,
+                    title: item.title,
+                    artist: item.artist,
+                    image: item.image,
+                    sourceProvider: item.provider,
+                    preview: null,
+                  });
+                  setActiveView('library');
+                }
               }
             >
               <img src={item.image} alt={item.title} />
@@ -345,13 +369,21 @@ function App() {
         </div>
         <div className="mix-grid">
           {mixes.map((mix) => (
-            <article key={mix.id} className="mix-card">
+            <button
+              type="button"
+              key={mix.id}
+              className="mix-card"
+              onClick={() => {
+                setQuery(mix.name);
+                runSearch(mix.name);
+              }}
+            >
               <div className={`mix-token ${mix.gradient}`}>{mix.token}</div>
               <div>
                 <strong>{mix.name}</strong>
                 <span>{mix.subtitle}</span>
               </div>
-            </article>
+            </button>
           ))}
         </div>
       </div>
@@ -555,17 +587,19 @@ function App() {
 
   const renderSettings = () => (
     <section className="view-grid">
-      <div className="profile-card block-card">
-        <img
-          src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=500&q=80"
-          alt="Profile"
-        />
-        <div>
-          <h2>Alex Rivera</h2>
-          <p>alex.rivera@mozikako.io</p>
-          <span>Premium Member</span>
+      {hasConnectedAccount ? (
+        <div className="profile-card block-card">
+          <img
+            src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=500&q=80"
+            alt="Profile"
+          />
+          <div>
+            <h2>Connected account</h2>
+            <p>{providerMeta[connectedProviders[0]]?.label}</p>
+            <span>{connectedProviders.length} service(s) connected</span>
+          </div>
         </div>
-      </div>
+      ) : null}
 
       <div className="block-card">
         <div className="section-head">
@@ -650,7 +684,7 @@ function App() {
         <div className="upgrade-card">
           <strong>Upgrade</strong>
           <p>Enable lossless quality and offline mode.</p>
-          <button type="button">Go Pro</button>
+          <button type="button" onClick={openUpgrade}>Go Pro</button>
         </div>
       </aside>
 
@@ -670,8 +704,10 @@ function App() {
               <span className={providerStatus.spotify ? 'dot connected' : 'dot'} />
               Spotify {providerStatus.spotify ? 'Connected' : 'Offline'}
             </div>
-            <button type="button"><Bell size={16} /></button>
-            <button type="button"><CircleUserRound size={16} /></button>
+            <button type="button" onClick={openNotifications}>
+              <Bell size={16} />
+            </button>
+            <button type="button" onClick={openProfile}><CircleUserRound size={16} /></button>
           </div>
         </header>
 
