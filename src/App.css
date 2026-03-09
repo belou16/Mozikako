@@ -56,21 +56,56 @@
 }
 
 .provider-toggle {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  display: grid;
+  gap: 8px;
   border: 1px solid var(--card-border);
   background: #ffffff;
   color: var(--ink);
   border-radius: 10px;
   padding: 10px 12px;
-  font-weight: 600;
-  cursor: pointer;
 }
 
 .provider-toggle.active {
   border-color: var(--teal);
   background: rgba(9, 132, 227, 0.08);
+}
+
+.toggle-provider-btn {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+  padding: 0;
+}
+
+.provider-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.provider-actions small {
+  color: var(--muted);
+}
+
+.provider-actions button {
+  border: 1px solid var(--card-border);
+  background: #f7fbff;
+  color: var(--ink);
+  border-radius: 8px;
+  padding: 4px 9px;
+  cursor: pointer;
+}
+
+.provider-actions button:disabled {
+  opacity: 0.6;
+  cursor: wait;
 }
 
 .search-form {

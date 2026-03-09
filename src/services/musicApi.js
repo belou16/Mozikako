@@ -13,3 +13,26 @@ export async function universalSearch(query, providers = ['spotify', 'apple', 'd
 
   return response.json();
 }
+
+export async function fetchProviderStatus() {
+  const response = await fetch(`${API_BASE}/api/v1/auth/providers/status`);
+  if (!response.ok) throw new Error('Cannot fetch provider status');
+  return response.json();
+}
+
+export async function getProviderConnectLink(provider) {
+  const response = await fetch(`${API_BASE}/api/v1/auth/${provider}/connect`);
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.message || body.error || 'Cannot initialize OAuth flow');
+  }
+  return response.json();
+}
+
+export async function disconnectProvider(provider) {
+  const response = await fetch(`${API_BASE}/api/v1/auth/${provider}/disconnect`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) throw new Error('Cannot disconnect provider');
+  return response.json();
+}

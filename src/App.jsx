@@ -1,6 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Disc3, Search, Link2, Music2, Sparkles } from 'lucide-react';
-import { universalSearch } from './services/musicApi';
+import {
+  disconnectProvider,
+  fetchProviderStatus,
+  getProviderConnectLink,
+  universalSearch,
+} from './services/musicApi';
 import './App.css';
 
 const providerLabels = {
@@ -29,6 +34,8 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [results, setResults] = useState([]);
   const [error, setError] = useState('');
+  const [providerStatus, setProviderStatus] = useState({});
+  const [isConnecting, setIsConnecting] = useState('');
   const [providers, setProviders] = useState({
     spotify: true,
     apple: true,
@@ -40,6 +47,27 @@ function App() {
     () => providerOrder.filter((provider) => providers[provider]),
     [providers],
   );
+
+  useEffect(() => {
+    let isMounted = true;
+    fetchProviderStatus()
+      .then((payload) => {
+        if (!isMounted) return;
+        const statusMap = {};
+        for (const item of payload.providers || []) {
+          statusMap[item.provider] = item.connected;
+        }
+        setProviderStatus(statusMap);
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setProviderStatus({});
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const toggleProvider = (provider) => {
     setProviders((current) => ({ ...current, [provider]: !current[provider] }));
@@ -73,6 +101,31 @@ function App() {
     }
   };
 
+  const onConnect = async (provider) => {
+    try {
+      setIsConnecting(provider);
+      const result = await getProviderConnectLink(provider);
+      if (result.authUrl) {
+        window.location.href = result.authUrl;
+        return;
+      }
+      setError(result.message || 'Ce provider n\'est pas encore supporte en OAuth reel.');
+    } catch (connectError) {
+      setError(connectError instanceof Error ? connectError.message : 'Connexion impossible');
+    } finally {
+      setIsConnecting('');
+    }
+  };
+
+  const onDisconnect = async (provider) => {
+    try {
+      await disconnectProvider(provider);
+      setProviderStatus((current) => ({ ...current, [provider]: false }));
+    } catch {
+      setError('Deconnexion impossible');
+    }
+  };
+
   return (
     <main className="page">
       <section className="hero-card">
@@ -94,15 +147,24 @@ function App() {
         </div>
         <div className="provider-grid">
           {providerOrder.map((provider) => (
-            <button
-              key={provider}
-              type="button"
-              className={`provider-toggle ${providers[provider] ? 'active' : ''}`}
-              onClick={() => toggleProvider(provider)}
-            >
-              <span>{providerLabels[provider]}</span>
-              <span>{providers[provider] ? 'ON' : 'OFF'}</span>
-            </button>
+            <div key={provider} className={`provider-toggle ${providers[provider] ? 'active' : ''}`}>
+              <button type="button" className="toggle-provider-btn" onClick={() => toggleProvider(provider)}>
+                <span>{providerLabels[provider]}</span>
+                <span>{providers[provider] ? 'ON' : 'OFF'}</span>
+              </button>
+              <div className="provider-actions">
+                <small>{providerStatus[provider] ? 'Connected' : 'Disconnected'}</small>
+                {providerStatus[provider] ? (
+                  <button type="button" onClick={() => onDisconnect(provider)}>
+                    Disconnect
+                  </button>
+                ) : (
+                  <button type="button" onClick={() => onConnect(provider)} disabled={isConnecting === provider}>
+                    {isConnecting === provider ? 'Connecting...' : 'Connect'}
+                  </button>
+                )}
+              </div>
+            </div>
           ))}
         </div>
       </section>
