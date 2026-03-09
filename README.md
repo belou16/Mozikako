@@ -42,6 +42,15 @@ src/
 - `POST /api/v1/playlists/transfer`
 - `GET /api/v1/playlists/jobs/:jobId`
 
+## OAuth reel (Spotify + Deezer)
+
+- `GET /api/v1/auth/spotify/connect?redirect=1` redirige vers Spotify OAuth.
+- `GET /api/v1/auth/deezer/connect?redirect=1` redirige vers Deezer OAuth.
+- Les callbacks echangent le `code` contre un token et persistent la connexion en local dans `server/data/connections.json`.
+- `POST /api/v1/auth/spotify/refresh` renouvelle le token Spotify via `refresh_token`.
+
+Note: Apple Music et YouTube restent en mode non-OAuth dans cette base et retournent un message explicite.
+
 ## Demarrage
 
 1. Copier `.env.example` vers `.env`
@@ -64,9 +73,9 @@ npm run dev
 
 ## Notes importantes
 
-- Les endpoints OAuth sont des stubs prets a brancher avec les credentials reels.
-- La recherche universelle fusionne deja Apple + Deezer + YouTube (stub) dans un format unifie.
-- Spotify est active cote UI et routes auth, mais la recherche Spotify est a brancher apres ajout du token flow serveur.
+- La recherche universelle fusionne Spotify + Apple + Deezer + YouTube dans un format unifie.
+- Spotify passe en mode API reelle des qu'un token OAuth est connecte.
+- Les jobs playlists (`import/export/transfer`) sont simules avec progression (`queued -> running -> completed`) via endpoint `jobs/:jobId`.
 
 ## Etapes suivantes recommandees
 

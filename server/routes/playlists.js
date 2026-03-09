@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { createJob, getJob } from '../services/jobsStore.js';
 
 const router = Router();
 
@@ -11,40 +12,32 @@ router.get('/', (_req, res) => {
 
 router.post('/import', (req, res) => {
   const { sourceProvider } = req.body || {};
-  res.json({
-    jobId: `job_import_${Date.now()}`,
-    sourceProvider: sourceProvider || null,
-    status: 'queued',
-  });
+  const job = createJob('import', { sourceProvider: sourceProvider || null });
+  res.json(job);
 });
 
 router.post('/export', (req, res) => {
   const { targetProvider } = req.body || {};
-  res.json({
-    jobId: `job_export_${Date.now()}`,
-    targetProvider: targetProvider || null,
-    status: 'queued',
-  });
+  const job = createJob('export', { targetProvider: targetProvider || null });
+  res.json(job);
 });
 
 router.post('/transfer', (req, res) => {
   const { fromProvider, toProvider } = req.body || {};
-  res.json({
-    jobId: `job_transfer_${Date.now()}`,
+  const job = createJob('transfer', {
     fromProvider: fromProvider || null,
     toProvider: toProvider || null,
-    status: 'queued',
   });
+  res.json(job);
 });
 
 router.get('/jobs/:jobId', (req, res) => {
   const { jobId } = req.params;
-  res.json({
-    jobId,
-    status: 'queued',
-    progress: 0,
-    message: 'Job engine is scaffolded. Connect BullMQ or Cloud Tasks for real execution.',
-  });
+  const job = getJob(jobId);
+  if (!job) {
+    return res.status(404).json({ error: 'Job not found' });
+  }
+  return res.json(job);
 });
 
 export default router;

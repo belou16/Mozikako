@@ -1,3 +1,5 @@
+import { getConnection } from './tokenStore.js';
+
 const ITUNES_BASE = 'https://itunes.apple.com';
 const DEEZER_BASE = 'https://api.deezer.com';
 
@@ -110,11 +112,44 @@ function searchSpotifyStub(query) {
   ];
 }
 
+async function searchSpotify(query, limit) {
+  const connection = await getConnection('spotify');
+  if (!connection?.accessToken) {
+    return searchSpotifyStub(query);
+  }
+
+  const url = `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=${limit}`;
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${connection.accessToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    return searchSpotifyStub(query);
+  }
+
+  const data = await response.json();
+  return (data.tracks?.items || []).map((item) => ({
+    title: item.name,
+    artist: item.artists?.[0]?.name || 'Unknown',
+    album: item.album?.name || null,
+    coverUrl: item.album?.images?.[1]?.url || item.album?.images?.[0]?.url || null,
+    source: {
+      provider: 'spotify',
+      providerTrackId: item.id,
+      previewUrl: item.preview_url || null,
+      externalUrl: item.external_urls?.spotify || null,
+      playable: true,
+    },
+  }));
+}
+
 export async function universalSearch(query, providers = ['apple', 'deezer', 'youtube'], limit = 8) {
   const wanted = new Set(providers);
   const tasks = [];
 
-  if (wanted.has('spotify')) tasks.push(Promise.resolve(searchSpotifyStub(query)));
+  if (wanted.has('spotify')) tasks.push(searchSpotify(query, limit));
   if (wanted.has('apple')) tasks.push(searchApple(query, limit));
   if (wanted.has('deezer')) tasks.push(searchDeezer(query, limit));
   if (wanted.has('youtube')) tasks.push(Promise.resolve(searchYouTubeStub(query)));
