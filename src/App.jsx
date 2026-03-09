@@ -6,6 +6,7 @@ import {
   Headphones,
   Home,
   ListMusic,
+  LogOut,
   Pause,
   Play,
   Plus,
@@ -104,7 +105,12 @@ function App() {
   const [recentPlays, setRecentPlays] = useState(() => loadPersisted('mozikako_recent', fallbackRecent));
   const [playerFallbackTrack, setPlayerFallbackTrack] = useState(null);
   const [audioQuality, setAudioQuality] = useState(() => localStorage.getItem('mozikako_quality') || 'High (320kbps)');
+  const [dataSaver, setDataSaver] = useState(() => localStorage.getItem('mozikako_data_saver') === '1');
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('mozikako_dark_mode') !== '0');
   const [notificationCount, setNotificationCount] = useState(1);
+  const [account, setAccount] = useState(() => loadPersisted('mozikako_account', null));
+  const [authMode, setAuthMode] = useState('login');
+  const [authForm, setAuthForm] = useState({ email: '', password: '', name: '' });
 
   const player = useAudioPlayer();
 
@@ -141,6 +147,22 @@ function App() {
   useEffect(() => {
     localStorage.setItem('mozikako_quality', audioQuality);
   }, [audioQuality]);
+
+  useEffect(() => {
+    localStorage.setItem('mozikako_data_saver', dataSaver ? '1' : '0');
+  }, [dataSaver]);
+
+  useEffect(() => {
+    localStorage.setItem('mozikako_dark_mode', darkMode ? '1' : '0');
+  }, [darkMode]);
+
+  useEffect(() => {
+    if (account) {
+      localStorage.setItem('mozikako_account', JSON.stringify(account));
+    } else {
+      localStorage.removeItem('mozikako_account');
+    }
+  }, [account]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -229,7 +251,55 @@ function App() {
 
   const openProfile = () => {
     setActiveView('settings');
-    setBanner('Profile and preferences are available below.');
+    setBanner('Profile and settings are available here.');
+  };
+
+  const submitAuth = (event) => {
+    event.preventDefault();
+    const email = authForm.email.trim().toLowerCase();
+    const password = authForm.password.trim();
+    const name = authForm.name.trim();
+
+    if (!email || !password) {
+      setError('Email and password are required.');
+      return;
+    }
+
+    if (authMode === 'register') {
+      const newAccount = {
+        email,
+        name: name || email.split('@')[0],
+        createdAt: new Date().toISOString(),
+      };
+      setAccount(newAccount);
+      setAuthForm({ email: '', password: '', name: '' });
+      setError('');
+      setBanner('Account created successfully.');
+      setActiveView('home');
+      return;
+    }
+
+    if (!account) {
+      setError('No account found. Create an account first.');
+      return;
+    }
+
+    if (account.email !== email) {
+      setError('This email does not match your local account.');
+      return;
+    }
+
+    setError('');
+    setBanner('Logged in successfully.');
+    setActiveView('home');
+  };
+
+  const logoutAccount = () => {
+    setAccount(null);
+    setResults([]);
+    setPlayerFallbackTrack(null);
+    setBanner('You are now logged out.');
+    setAuthMode('login');
   };
 
   const runSearch = async (term) => {
@@ -586,73 +656,170 @@ function App() {
   );
 
   const renderSettings = () => (
-    <section className="view-grid">
-      {hasConnectedAccount ? (
-        <div className="profile-card block-card">
-          <img
-            src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=500&q=80"
-            alt="Profile"
-          />
-          <div>
-            <h2>Connected account</h2>
-            <p>{providerMeta[connectedProviders[0]]?.label}</p>
-            <span>{connectedProviders.length} service(s) connected</span>
-          </div>
-        </div>
-      ) : null}
+    <section className="view-grid settings-screen">
+      <div className="settings-topbar">
+        <h1>Settings</h1>
+        <button type="button" className="ghost-btn" onClick={() => refreshProviderStatus().catch(() => undefined)}>
+          Refresh
+        </button>
+      </div>
 
-      <div className="block-card">
-        <div className="section-head">
-          <h2>Connected Services</h2>
-          <button type="button" className="ghost-btn" onClick={() => refreshProviderStatus().catch(() => undefined)}>
-            Refresh
-          </button>
+      <div className="settings-profile block-card">
+        <img
+          src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=500&q=80"
+          alt="Profile"
+        />
+        <div>
+          <h2>{account?.name || 'My Account'}</h2>
+          <p>{account?.email}</p>
+          <span>{hasConnectedAccount ? `${connectedProviders.length} service(s) connected` : 'No music service connected'}</span>
         </div>
-        <div className="service-grid">
+      </div>
+
+      <div className="settings-card block-card">
+        <div className="settings-card-head">
+          <h2>Connected Services</h2>
+          <small>Manage all</small>
+        </div>
+        <div className="settings-services-grid">
           {providerOrder.map((provider) => {
             const meta = providerMeta[provider];
             const connected = Boolean(providerStatus[provider]);
             return (
-              <article key={provider} className="service-card">
-                <div>
-                  <strong>{meta.label}</strong>
-                  <small>{connected ? 'Connected' : 'Not connected'}</small>
+              <article key={provider} className="settings-service-item">
+                <div className="settings-service-main">
+                  <div className={`settings-service-icon ${meta.colorClass}`}>{meta.badge}</div>
+                  <div>
+                    <strong>{meta.label}</strong>
+                    <small>{connected ? 'Connected' : 'Not connected'}</small>
+                  </div>
                 </div>
-                {connected ? (
-                  <button type="button" onClick={() => disconnectService(provider)}>Disconnect</button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => connectProvider(provider)}
-                    disabled={isConnecting === provider}
-                  >
-                    {isConnecting === provider ? 'Connecting...' : 'Connect'}
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className={`switch-btn ${connected ? 'on' : ''}`}
+                  disabled={isConnecting === provider}
+                  onClick={() => (connected ? disconnectService(provider) : connectProvider(provider))}
+                >
+                  <span />
+                </button>
               </article>
             );
           })}
         </div>
       </div>
 
-      <div className="block-card">
-        <div className="section-head">
-          <h2>Preferences</h2>
+      <div className="settings-card block-card">
+        <div className="settings-card-head">
+          <h2>App Preferences</h2>
         </div>
-        <div className="prefs-list">
-          <article>
-            <strong>Streaming Quality</strong>
-            <select value={audioQuality} onChange={(event) => setAudioQuality(event.target.value)}>
-              <option>Normal (160kbps)</option>
-              <option>High (320kbps)</option>
-            </select>
+        <div className="settings-pref-list">
+          <article className="settings-pref-item">
+            <div>
+              <strong>Streaming Quality</strong>
+              <small>Choose your preferred audio fidelity</small>
+            </div>
+            <div className="quality-pill">
+              <button
+                type="button"
+                className={audioQuality.startsWith('Normal') ? 'active' : ''}
+                onClick={() => setAudioQuality('Normal (160kbps)')}
+              >
+                Normal
+              </button>
+              <button
+                type="button"
+                className={audioQuality.startsWith('High') ? 'active' : ''}
+                onClick={() => setAudioQuality('High (320kbps)')}
+              >
+                High (320kbps)
+              </button>
+            </div>
           </article>
-          <article><strong>Data Saver</strong><span>Disabled</span></article>
-          <article><strong>Theme</strong><span>Neon Night</span></article>
+
+          <article className="settings-pref-item">
+            <div>
+              <strong>Data Saver</strong>
+              <small>Reduce quality on mobile data</small>
+            </div>
+            <button type="button" className={`switch-btn ${dataSaver ? 'on' : ''}`} onClick={() => setDataSaver((v) => !v)}>
+              <span />
+            </button>
+          </article>
+
+          <article className="settings-pref-item">
+            <div>
+              <strong>Dark Mode</strong>
+              <small>Toggle between light and dark theme</small>
+            </div>
+            <button type="button" className={`switch-btn ${darkMode ? 'on' : ''}`} onClick={() => setDarkMode((v) => !v)}>
+              <span />
+            </button>
+          </article>
         </div>
       </div>
+
+      <button type="button" className="logout-all-btn" onClick={logoutAccount}>
+        <LogOut size={14} /> Log Out of All Devices
+      </button>
+      <p className="settings-footer-note">Mozikako v2.4.0-stable • Built with passion for audiophiles</p>
     </section>
   );
+
+  if (!account) {
+    return (
+      <main className="auth-shell">
+        <section className="auth-card">
+          <div className="brand-box auth-brand">
+            <div className="brand-logo"><Sparkles size={16} /></div>
+            <div>
+              <strong>Mozikako</strong>
+              <span>Universal Audio</span>
+            </div>
+          </div>
+
+          <h1>{authMode === 'login' ? 'Login to your account' : 'Create your account'}</h1>
+          <p>Sign in first, then connect Spotify, Apple Music, Deezer, and YouTube from your account page.</p>
+
+          <form className="auth-form" onSubmit={submitAuth}>
+            {authMode === 'register' ? (
+              <input
+                placeholder="Display name"
+                value={authForm.name}
+                onChange={(event) => setAuthForm((current) => ({ ...current, name: event.target.value }))}
+              />
+            ) : null}
+            <input
+              type="email"
+              placeholder="Email"
+              value={authForm.email}
+              onChange={(event) => setAuthForm((current) => ({ ...current, email: event.target.value }))}
+            />
+            <input
+              type="password"
+              placeholder="Password"
+              value={authForm.password}
+              onChange={(event) => setAuthForm((current) => ({ ...current, password: event.target.value }))}
+            />
+            {error ? <p className="inline-error">{error}</p> : null}
+            <button type="submit" className="auth-submit">
+              {authMode === 'login' ? 'Login' : 'Create Account'}
+            </button>
+          </form>
+
+          <button
+            type="button"
+            className="ghost-btn auth-toggle"
+            onClick={() => {
+              setAuthMode((current) => (current === 'login' ? 'register' : 'login'));
+              setError('');
+            }}
+          >
+            {authMode === 'login' ? 'No account yet? Create one' : 'Already have an account? Login'}
+          </button>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <div className="mk-shell">
